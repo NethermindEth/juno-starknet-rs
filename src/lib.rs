@@ -16,4 +16,7 @@ pub extern "C" fn cairoVMCall(reader_handle: usize) {
     println!("res {:?}", reader.get_storage_at(&entry));
     println!("res {:?}", reader.get_nonce_at(&addr));
     println!("res {:?}", reader.get_class_hash_at(&addr));
+
+    let class_hash = [5; 32];
+    println!("res {:?}", reader.get_contract_class(&class_hash));
 }

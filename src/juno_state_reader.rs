@@ -5,7 +5,7 @@ use starknet_rs::{
     utils::{Address, ClassHash},
 };
 use felt::Felt;
-use std:: { collections::HashMap, ffi::c_uchar, slice };
+use std:: { collections::HashMap, ffi::{c_uchar, c_char, CStr}, slice };
 
 extern {
     fn JunoFree(ptr: *const c_uchar);
@@ -13,6 +13,7 @@ extern {
     fn JunoStateGetStorageAt(reader_handle: usize, contract_address: *const c_uchar, storage_location: *const c_uchar) -> *const c_uchar;
     fn JunoStateGetNonceAt(reader_handle: usize, contract_address: *const c_uchar) -> *const c_uchar;
     fn JunoStateGetClassHashAt(reader_handle: usize, contract_address: *const c_uchar) -> *const c_uchar;
+    fn JunoStateGetClass(reader_handle: usize, class_hash: *const c_uchar) -> *const c_char;
 }
 
 pub struct JunoStateReader{
@@ -37,8 +38,17 @@ impl JunoStateReader {
 }
 
 impl StateReader for JunoStateReader {
-    fn get_contract_class(&mut self, _class_hash: &ClassHash) -> Result<ContractClass, StateError> {
-        todo!()
+    fn get_contract_class(&mut self, class_hash: &ClassHash) -> Result<ContractClass, StateError> {
+        let ptr = unsafe { JunoStateGetClass(self.handle, class_hash.as_ptr()) };
+
+        if ptr.is_null() {
+            Err(StateError::MissingClassHash())
+        } else {
+            let json_cstr = unsafe { CStr::from_ptr(ptr) };
+            let json_str = json_cstr.to_str().or_else(|_err| Err(StateError::MissingClassHash()))?;
+
+            ContractClass::try_from(json_str).or_else(|_err| Err(StateError::MissingClassHash()))
+        }
     }
 
     fn get_class_hash_at(&mut self, contract_address: &Address) -> Result<&ClassHash, StateError> {
