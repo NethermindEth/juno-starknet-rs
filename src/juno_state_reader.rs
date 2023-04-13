@@ -114,7 +114,7 @@ impl StateReader for JunoStateReader {
 }
 
 
-fn felt_to_byte_array(felt: &Felt) -> [u8; 32] {
+pub fn felt_to_byte_array(felt: &Felt) -> [u8; 32] {
     let felt_bytes = felt.to_bytes_be();
     let mut zeros = [0; 32];
     let mut start_idx =  zeros.len() - felt_bytes.len();
@@ -128,7 +128,7 @@ fn felt_to_byte_array(felt: &Felt) -> [u8; 32] {
 }
 
 
-fn ptr_to_felt(bytes: *const c_uchar) -> Felt {
+pub fn ptr_to_felt(bytes: *const c_uchar) -> Felt {
     let slice = unsafe { slice::from_raw_parts(bytes, 32) };
     Felt::from_bytes_be(slice)
 }
