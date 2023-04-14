@@ -6,10 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-felt = { git = "https://github.com/lambdaclass/cairo-rs", package = "cairo-felt", rev = "8dba86dbec935fa04a255e2edf3d5d184950fa22" }
 serde = "1.0.160"
 serde_json = "1.0.96"
-starknet-rs = { git = "https://github.com/lambdaclass/starknet_in_rust", rev = "17a7ab24c9eb78f62660da68e6690e5b014a1ac9" }
+felt = { git = "https://github.com/lambdaclass/cairo-rs", package = "cairo-felt", rev = "eebfd612c5f969c759cb982e8fb777b2a1a1dab0" }
+starknet-rs = { git = "https://github.com/lambdaclass/starknet_in_rust", rev = "3f275ab4ece93f05d7faddc28eaa3459b405b2a4" }
+
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
