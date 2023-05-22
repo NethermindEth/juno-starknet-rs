@@ -1,121 +1,155 @@
-use std:: { ffi::{c_uchar, c_char, CStr}, slice };
-
-use starknet_rs::{
-    business_logic::state::{state_api::StateReader, state_cache::StorageEntry},
-    core::errors::state_errors::StateError,
-    services::api::contract_class::ContractClass,
-    utils::{Address, ClassHash},
+use std::{
+    ffi::{c_char, c_uchar, CStr, c_void},
+    slice,
 };
-use felt::Felt252;
 
-extern {
-    fn JunoFree(ptr: *const c_uchar);
+use blockifier::{
+    execution::contract_class::{ContractClassV0, ContractClassV1},
+    state::state_api::{StateReader, StateResult},
+};
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::hash::StarkFelt;
+use starknet_api::state::StorageKey;
 
-    fn JunoStateGetStorageAt(reader_handle: usize, contract_address: *const c_uchar, storage_location: *const c_uchar) -> *const c_uchar;
-    fn JunoStateGetNonceAt(reader_handle: usize, contract_address: *const c_uchar) -> *const c_uchar;
-    fn JunoStateGetClassHashAt(reader_handle: usize, contract_address: *const c_uchar) -> *const c_uchar;
+use blockifier::execution::contract_class::ContractClass;
+use blockifier::state::errors::StateError;
+
+extern "C" {
+    fn JunoFree(ptr: *const c_void);
+
+    fn JunoStateGetStorageAt(
+        reader_handle: usize,
+        contract_address: *const c_uchar,
+        storage_location: *const c_uchar,
+    ) -> *const c_uchar;
+    fn JunoStateGetNonceAt(
+        reader_handle: usize,
+        contract_address: *const c_uchar,
+    ) -> *const c_uchar;
+    fn JunoStateGetClassHashAt(
+        reader_handle: usize,
+        contract_address: *const c_uchar,
+    ) -> *const c_uchar;
     fn JunoStateGetClass(reader_handle: usize, class_hash: *const c_uchar) -> *const c_char;
 }
 
-pub struct JunoStateReader{
+pub struct JunoStateReader {
     pub handle: usize, // uintptr_t equivalent
 }
 
 impl JunoStateReader {
-    pub fn new(
-        handle: usize
-    ) -> Self {
-        Self {
-            handle: handle,
-        }
+    pub fn new(handle: usize) -> Self {
+        Self { handle: handle }
     }
 }
 
 impl StateReader for JunoStateReader {
-    fn get_contract_class(&mut self, class_hash: &ClassHash) -> Result<ContractClass, StateError> {
-        let ptr = unsafe { JunoStateGetClass(self.handle, class_hash.as_ptr()) };
-
+    fn get_storage_at(
+        &mut self,
+        contract_address: ContractAddress,
+        key: StorageKey,
+    ) -> StateResult<StarkFelt> {
+        let addr = felt_to_byte_array(contract_address.0.key());
+        let storage_key = felt_to_byte_array(key.0.key());
+        let ptr =
+            unsafe { JunoStateGetStorageAt(self.handle, addr.as_ptr(), storage_key.as_ptr()) };
         if ptr.is_null() {
-            Err(StateError::MissingClassHash())
-        } else {
-            let json_cstr = unsafe { CStr::from_ptr(ptr) };
-            let json_str = json_cstr.to_str().or_else(|_err| Err(StateError::MissingClassHash()))?;
-
-            ContractClass::try_from(json_str).or_else(|_err| Err(StateError::MissingClassHash()))
-        }
-    }
-
-    fn get_class_hash_at(&mut self, contract_address: &Address) -> Result<ClassHash, StateError> {
-        let addr = felt_to_byte_array(&contract_address.0);
-        let ptr = unsafe { JunoStateGetClassHashAt(self.handle, addr.as_ptr()) };
-        if ptr.is_null() {
-            Err(StateError::NoneClassHash(contract_address.clone()))
+            Err(StateError::StateReadError(format!(
+                "failed to read location {} at address {}",
+                key.0.key(),
+                contract_address.0.key()
+            )))
         } else {
             let felt_val = ptr_to_felt(ptr);
-            unsafe { JunoFree(ptr) };
+            unsafe { JunoFree(ptr as *const c_void) };
 
-            Ok(felt_to_byte_array(&felt_val))
+            Ok(felt_val)
         }
     }
 
-    fn get_nonce_at(&mut self, contract_address: &Address) -> Result<Felt252, StateError> {
-        let addr = felt_to_byte_array(&contract_address.0);
+    /// Returns the nonce of the given contract instance.
+    /// Default: 0 for an uninitialized contract address.
+    fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
+        let addr = felt_to_byte_array(contract_address.0.key());
         let ptr = unsafe { JunoStateGetNonceAt(self.handle, addr.as_ptr()) };
         if ptr.is_null() {
-            Err(StateError::NoneContractState(contract_address.clone()))
+            Err(StateError::StateReadError(format!(
+                "failed to read nonce of address {}",
+                contract_address.0.key()
+            )))
         } else {
             let felt_val = ptr_to_felt(ptr);
-            unsafe { JunoFree(ptr) };
-
-            Ok(felt_val)
+            unsafe { JunoFree(ptr as *const c_void) };
+            Ok(Nonce(felt_val))
         }
     }
 
-    fn get_storage_at(&mut self, storage_entry: &StorageEntry) -> Result<Felt252, StateError> {
-        let addr = felt_to_byte_array(&storage_entry.0.0);
-        let ptr = unsafe { JunoStateGetStorageAt(self.handle, addr.as_ptr(), storage_entry.1.as_ptr()) };
+    /// Returns the class hash of the contract class at the given contract instance.
+    /// Default: 0 (uninitialized class hash) for an uninitialized contract address.
+    fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
+        let addr = felt_to_byte_array(contract_address.0.key());
+        let ptr = unsafe { JunoStateGetClassHashAt(self.handle, addr.as_ptr()) };
         if ptr.is_null() {
-            Err(StateError::NoneStorage(storage_entry.clone()))
+            Err(StateError::StateReadError(format!(
+                "failed to read class hash of address {}",
+                contract_address.0.key()
+            )))
         } else {
             let felt_val = ptr_to_felt(ptr);
-            unsafe { JunoFree(ptr) };
+            unsafe { JunoFree(ptr as *const c_void) };
 
-            Ok(felt_val)
+            Ok(ClassHash(felt_val))
         }
     }
 
-    fn count_actual_storage_changes(&mut self) -> (usize, usize) {
-        unimplemented!("todo")
+    /// Returns the contract class of the given class hash.
+    fn get_compiled_contract_class(
+        &mut self,
+        class_hash: &ClassHash,
+    ) -> StateResult<ContractClass> {
+        let class_hash_bytes = felt_to_byte_array(&class_hash.0);
+        let ptr = unsafe { JunoStateGetClass(self.handle, class_hash_bytes.as_ptr()) };
+        if ptr.is_null() {
+            Err(StateError::StateReadError(format!(
+                "failed to read class with hash {}",
+                class_hash.0
+            )))
+        } else {
+            let json_str = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap();
+
+            let v0_class = ContractClassV0::try_from_json_string(json_str);
+            let v1_class = ContractClassV1::try_from_json_string(json_str);
+
+            unsafe { JunoFree(ptr as *const c_void) };
+
+            if v0_class.is_ok() {
+                Ok(v0_class.unwrap().into())
+            } else if v1_class.is_ok() {
+                Ok(v1_class.unwrap().into())
+            } else {
+                Err(StateError::StateReadError(format!(
+                    "error parsing JSON string for class hash {}",
+                    class_hash.0
+                )))
+            }
+        }
     }
 
-}
-
-impl Clone for JunoStateReader {
-    fn clone(&self) -> Self {
-        JunoStateReader::new(self.handle)
+    /// Returns the compiled class hash of the given class hash.
+    fn get_compiled_class_hash(
+        &mut self,
+        _class_hash: ClassHash,
+    ) -> StateResult<CompiledClassHash> {
+        unimplemented!()
     }
 }
 
-impl Default for JunoStateReader {
-    fn default() -> Self {
-        JunoStateReader::new(usize::MAX)
-    }
+pub fn felt_to_byte_array(felt: &StarkFelt) -> [u8; 32] {
+    felt.bytes().try_into().expect("StarkFelt not [u8; 32]")
 }
 
-pub fn felt_to_byte_array(felt: &Felt252) -> [u8; 32] {
-    let felt_bytes = felt.to_bytes_be();
-    let mut zeros = [0; 32];
-    let mut start_idx =  zeros.len() - felt_bytes.len();
-
-    for val in felt_bytes {
-        zeros[start_idx] = val;
-        start_idx += 1;
-    }
-    zeros
-}
-
-
-pub fn ptr_to_felt(bytes: *const c_uchar) -> Felt252 {
-     let slice = unsafe { slice::from_raw_parts(bytes, 32) };
-    Felt252::from_bytes_be(slice)
+pub fn ptr_to_felt(bytes: *const c_uchar) -> StarkFelt {
+    let slice = unsafe { slice::from_raw_parts(bytes, 32) };
+    StarkFelt::new(slice.try_into().expect("Juno felt not [u8; 32]"))
+        .expect("cannot new Starkfelt from Juno bytes")
 }
