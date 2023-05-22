@@ -17,10 +17,10 @@ use starknet_rs::{
         transaction::error::TransactionError,
     },
     definitions::general_config::StarknetGeneralConfig,
-    services::api::contract_class::EntryPointType,
+    services::api::contract_classes::deprecated_contract_class::EntryPointType,
     utils::Address
 };
-use felt::Felt252;
+use cairo_vm::felt::Felt252;
 
 extern {
     fn JunoReportError(reader_handle: usize, err: *const c_char);
@@ -74,9 +74,10 @@ fn execute_entry_point_raw(
         EntryPointType::External,
         None,
         None,
+        0
     );
 
-    let mut state = CachedState::new(state_reader, Some(HashMap::new()));
+    let mut state = CachedState::new(state_reader, Some(HashMap::new()), Some(HashMap::new()));
     let mut resources_manager = ExecutionResourcesManager::default();
     let config = StarknetGeneralConfig::default();
     let tx_execution_context = TransactionExecutionContext::default();
@@ -86,6 +87,7 @@ fn execute_entry_point_raw(
         &config,
         &mut resources_manager,
         &tx_execution_context,
+        true
     )
 }
 

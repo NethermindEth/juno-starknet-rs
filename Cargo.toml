@@ -8,9 +8,9 @@ edition = "2021"
 [dependencies]
 serde = "1.0.160"
 serde_json = "1.0.96"
-felt = { git = "https://github.com/lambdaclass/cairo-rs", package = "cairo-felt", rev = "eebfd612c5f969c759cb982e8fb777b2a1a1dab0" }
-starknet-rs = { git = "https://github.com/lambdaclass/starknet_in_rust", rev = "3f275ab4ece93f05d7faddc28eaa3459b405b2a4" }
-
+starknet-rs = { git = "https://github.com/lambdaclass/starknet_in_rust", rev = "ad6a494d71112c363bd35e95df2b92f39b3430ce" }
+cairo-lang-starknet = { git = "https://github.com/starkware-libs/cairo", rev = "4afacfd574de1121d61dea28f8c73e1516c7e07d"}
+cairo-vm = { git = "https://github.com/lambdaclass/cairo-rs", features = ["cairo-1-hints"] }
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

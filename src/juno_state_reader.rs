@@ -3,10 +3,13 @@ use std:: { ffi::{c_uchar, c_char, CStr}, slice };
 use starknet_rs::{
     business_logic::state::{state_api::StateReader, state_cache::StorageEntry},
     core::errors::state_errors::StateError,
-    services::api::contract_class::ContractClass,
-    utils::{Address, ClassHash},
+    services::api::contract_classes::{
+        compiled_class::CompiledClass, deprecated_contract_class::ContractClass,
+    },
+    utils::{Address, ClassHash, CompiledClassHash},
 };
-use felt::Felt252;
+use cairo_vm::felt::Felt252;
+use cairo_lang_starknet::contract_class::ContractClass as SierraContractClass
 
 extern {
     fn JunoFree(ptr: *const c_uchar);
@@ -88,6 +91,21 @@ impl StateReader for JunoStateReader {
         unimplemented!("todo")
     }
 
+    fn get_compiled_class(
+        &mut self,
+        compiled_class_hash: &CompiledClassHash,
+    ) -> Result<CompiledClass, StateError> {
+        let class: ContractClass = self.get_contract_class(compiled_class_hash)?;
+        Ok(CompiledClass::Deprecated(Box::new(class)))
+    }
+
+    /// Return the class hash of the given casm contract class
+    fn get_compiled_class_hash(
+        &mut self,
+        class_hash: &ClassHash,
+    ) -> Result<CompiledClassHash, StateError> {
+        unimplemented!("todo")
+    }
 }
 
 impl Clone for JunoStateReader {
