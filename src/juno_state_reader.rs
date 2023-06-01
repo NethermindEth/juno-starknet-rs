@@ -1,5 +1,5 @@
 use std::{
-    ffi::{c_char, c_uchar, CStr, c_void},
+    ffi::{c_char, c_uchar, c_void, CStr},
     slice,
 };
 
@@ -116,16 +116,11 @@ impl StateReader for JunoStateReader {
             )))
         } else {
             let json_str = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap();
-
-            let v0_class = ContractClassV0::try_from_json_string(json_str);
-            let v1_class = ContractClassV1::try_from_json_string(json_str);
-
+            let contract_class = contract_class_from_json_str(json_str);
             unsafe { JunoFree(ptr as *const c_void) };
 
-            if v0_class.is_ok() {
-                Ok(v0_class.unwrap().into())
-            } else if v1_class.is_ok() {
-                Ok(v1_class.unwrap().into())
+            if contract_class.is_ok() {
+                Ok(contract_class.unwrap())
             } else {
                 Err(StateError::StateReadError(format!(
                     "error parsing JSON string for class hash {}",
@@ -152,4 +147,17 @@ pub fn ptr_to_felt(bytes: *const c_uchar) -> StarkFelt {
     let slice = unsafe { slice::from_raw_parts(bytes, 32) };
     StarkFelt::new(slice.try_into().expect("Juno felt not [u8; 32]"))
         .expect("cannot new Starkfelt from Juno bytes")
+}
+
+pub fn contract_class_from_json_str(raw_json: &str) -> Result<ContractClass, String> {
+    let v0_class = ContractClassV0::try_from_json_string(raw_json);
+    let v1_class = ContractClassV1::try_from_json_string(raw_json);
+
+    if v0_class.is_ok() {
+        Ok(v0_class.unwrap().into())
+    } else if v1_class.is_ok() {
+        Ok(v1_class.unwrap().into())
+    } else {
+        Err("not a valid contract class".to_string())
+    }
 }
