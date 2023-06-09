@@ -13,7 +13,7 @@ use blockifier::{
     state::cached_state::CachedState,
     transaction::{
         objects::AccountTransactionContext, transaction_execution::Transaction, transactions::ExecutableTransaction,
-    },
+    }, abi::constants::INITIAL_GAS_COST,
 };
 use juno_state_reader::contract_class_from_json_str;
 use juno_state_reader::felt_to_byte_array;
@@ -62,17 +62,15 @@ pub extern "C" fn cairoVMCall(
         calldata: Calldata(calldata_vec.into()),
         storage_address: contract_addr_felt.try_into().unwrap(),
         call_type: CallType::Call,
-        ..Default::default()
+        class_hash: None,
+        code_address: None,
+        caller_address: ContractAddress::default(),
+        initial_gas: INITIAL_GAS_COST.into(),
     };
 
     let mut state = CachedState::new(reader);
     let mut context = ExecutionContext::new(
-        BlockContext {
-            chain_id: ChainId(chain_id_str.into()),
-            block_number: BlockNumber(block_number),
-            block_timestamp: BlockTimestamp(block_timestamp),
-            ..BlockContext::create_for_testing()
-        },
+        build_block_context(chain_id_str, block_number, block_timestamp),
         AccountTransactionContext::default(),
     );
     let call_info = entry_point.execute(&mut state, &mut context);
@@ -127,31 +125,7 @@ pub extern "C" fn cairoVMExecute(
         return;
     }
 
-    let block_context = BlockContext {
-        chain_id: ChainId(chain_id_str.into()),
-        block_number: BlockNumber(block_number),
-        block_timestamp: BlockTimestamp(block_timestamp),
-
-        sequencer_address: ContractAddress::default(),
-        // https://github.com/starknet-io/starknet-addresses/blob/df19b17d2c83f11c30e65e2373e8a0c65446f17c/bridged_tokens/mainnet.json
-        // fee_token_address is the same for all networks
-        fee_token_address: ContractAddress::try_from(StarkHash::try_from("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()).unwrap(),
-        gas_price: 1, // fixed gas price, so that we can return "consumed gas" to Go side
-        vm_resource_fee_cost: HashMap::from([
-            ("n_steps".to_string(), N_STEPS_FEE_WEIGHT),
-            ("output".to_string(), 0.0),
-            ("pedersen".to_string(), N_STEPS_FEE_WEIGHT * 32.0),
-            ("range_check".to_string(), N_STEPS_FEE_WEIGHT * 16.0),
-            ("ecdsa".to_string(), N_STEPS_FEE_WEIGHT * 2048.0),
-            ("bitwise".to_string(), N_STEPS_FEE_WEIGHT * 64.0),
-            ("ec_op".to_string(), N_STEPS_FEE_WEIGHT * 1024.0),
-            ("poseidon".to_string(), N_STEPS_FEE_WEIGHT * 32.0),
-            ("segment_arena".to_string(), N_STEPS_FEE_WEIGHT * 10.0),
-        ]),
-        invoke_tx_max_n_steps: 1_000_000,
-        validate_max_n_steps: 1_000_000,
-    };
-
+    let block_context: BlockContext = build_block_context(chain_id_str, block_number, block_timestamp);
     let mut state = CachedState::new(reader);
 
     let res = match txn.unwrap() {
@@ -175,4 +149,31 @@ fn report_error(reader_handle: usize, msg: &str) {
     unsafe {
         JunoReportError(reader_handle, err_msg.as_ptr());
     };
+}
+
+fn build_block_context(chain_id_str: &str, block_number: c_ulonglong, block_timestamp: c_ulonglong) -> BlockContext {
+    BlockContext {
+        chain_id: ChainId(chain_id_str.into()),
+        block_number: BlockNumber(block_number),
+        block_timestamp: BlockTimestamp(block_timestamp),
+
+        sequencer_address: ContractAddress::default(),
+        // https://github.com/starknet-io/starknet-addresses/blob/df19b17d2c83f11c30e65e2373e8a0c65446f17c/bridged_tokens/mainnet.json
+        // fee_token_address is the same for all networks
+        fee_token_address: ContractAddress::try_from(StarkHash::try_from("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()).unwrap(),
+        gas_price: 1, // fixed gas price, so that we can return "consumed gas" to Go side
+        vm_resource_fee_cost: HashMap::from([
+            ("n_steps".to_string(), N_STEPS_FEE_WEIGHT),
+            ("output".to_string(), 0.0),
+            ("pedersen".to_string(), N_STEPS_FEE_WEIGHT * 32.0),
+            ("range_check".to_string(), N_STEPS_FEE_WEIGHT * 16.0),
+            ("ecdsa".to_string(), N_STEPS_FEE_WEIGHT * 2048.0),
+            ("bitwise".to_string(), N_STEPS_FEE_WEIGHT * 64.0),
+            ("ec_op".to_string(), N_STEPS_FEE_WEIGHT * 1024.0),
+            ("poseidon".to_string(), N_STEPS_FEE_WEIGHT * 32.0),
+            ("segment_arena".to_string(), N_STEPS_FEE_WEIGHT * 10.0),
+        ]),
+        invoke_tx_max_n_steps: 1_000_000,
+        validate_max_n_steps: 1_000_000,
+    }
 }

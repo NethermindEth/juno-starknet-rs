@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 serde = "1.0.160"
 serde_json = "1.0.96"
-blockifier = {git = "https://github.com/starkware-libs/blockifier", rev = "477e8a8e4c514d006123ff8c2362c311217fb2b5"}
+blockifier = {git = "https://github.com/starkware-libs/blockifier", rev = "f2d237b"}
 starknet_api = { git = "https://github.com/starkware-libs/starknet-api", rev = "24a7249" }
 
 [lib]
