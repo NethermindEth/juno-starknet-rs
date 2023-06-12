@@ -13,7 +13,7 @@ use blockifier::{
     state::cached_state::CachedState,
     transaction::{
         objects::AccountTransactionContext, transaction_execution::Transaction, transactions::ExecutableTransaction,
-    }, abi::constants::INITIAL_GAS_COST,
+    }, abi::constants::{INITIAL_GAS_COST, N_STEPS_RESOURCE},
 };
 use juno_state_reader::contract_class_from_json_str;
 use juno_state_reader::felt_to_byte_array;
@@ -23,6 +23,10 @@ use starknet_api::{
     block::{BlockNumber, BlockTimestamp},
     deprecated_contract_class::EntryPointType,
     hash::StarkFelt,
+};
+use cairo_vm::vm::runners::builtin_runner::{
+    BITWISE_BUILTIN_NAME, EC_OP_BUILTIN_NAME, HASH_BUILTIN_NAME, OUTPUT_BUILTIN_NAME, KECCAK_BUILTIN_NAME,
+    POSEIDON_BUILTIN_NAME, RANGE_CHECK_BUILTIN_NAME, SIGNATURE_BUILTIN_NAME, SEGMENT_ARENA_BUILTIN_NAME
 };
 
 extern "C" {
@@ -163,15 +167,16 @@ fn build_block_context(chain_id_str: &str, block_number: c_ulonglong, block_time
         fee_token_address: ContractAddress::try_from(StarkHash::try_from("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()).unwrap(),
         gas_price: 1, // fixed gas price, so that we can return "consumed gas" to Go side
         vm_resource_fee_cost: HashMap::from([
-            ("n_steps".to_string(), N_STEPS_FEE_WEIGHT),
-            ("output".to_string(), 0.0),
-            ("pedersen".to_string(), N_STEPS_FEE_WEIGHT * 32.0),
-            ("range_check".to_string(), N_STEPS_FEE_WEIGHT * 16.0),
-            ("ecdsa".to_string(), N_STEPS_FEE_WEIGHT * 2048.0),
-            ("bitwise".to_string(), N_STEPS_FEE_WEIGHT * 64.0),
-            ("ec_op".to_string(), N_STEPS_FEE_WEIGHT * 1024.0),
-            ("poseidon".to_string(), N_STEPS_FEE_WEIGHT * 32.0),
-            ("segment_arena".to_string(), N_STEPS_FEE_WEIGHT * 10.0),
+            (N_STEPS_RESOURCE.to_string(), N_STEPS_FEE_WEIGHT),
+            (OUTPUT_BUILTIN_NAME.to_string(), 0.0),
+            (HASH_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 32.0),
+            (RANGE_CHECK_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 16.0),
+            (SIGNATURE_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 2048.0),
+            (BITWISE_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 64.0),
+            (EC_OP_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 1024.0),
+            (POSEIDON_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 32.0),
+            (SEGMENT_ARENA_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 10.0),
+            (KECCAK_BUILTIN_NAME.to_string(), 0.0),
         ]),
         invoke_tx_max_n_steps: 1_000_000,
         validate_max_n_steps: 1_000_000,
