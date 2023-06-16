@@ -138,7 +138,7 @@ pub extern "C" fn cairoVMExecute(
     };
 
     match res {
-        Err(e) => report_error(reader_handle, e.to_string().as_str()),
+        Err(e) => report_error(reader_handle, format!("{:?}", e).as_str()),
         Ok(t) => unsafe {
             JunoSetGasConsumed(
                 reader_handle,
