@@ -110,10 +110,7 @@ impl StateReader for JunoStateReader {
         let class_hash_bytes = felt_to_byte_array(&class_hash.0);
         let ptr = unsafe { JunoStateGetClass(self.handle, class_hash_bytes.as_ptr()) };
         if ptr.is_null() {
-            Err(StateError::StateReadError(format!(
-                "failed to read class with hash {}",
-                class_hash.0
-            )))
+            Err(StateError::UndeclaredClassHash(*class_hash))
         } else {
             let json_str = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap();
             let contract_class = contract_class_from_json_str(json_str);

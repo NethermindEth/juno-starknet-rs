@@ -8,25 +8,36 @@ use std::{
 };
 
 use blockifier::{
+    abi::constants::{INITIAL_GAS_COST, N_STEPS_RESOURCE},
     block_context::BlockContext,
-    execution::entry_point::{CallEntryPoint, CallType, ExecutionContext},
+    execution::{
+        contract_class::{ContractClass, ContractClassV1},
+        entry_point::{CallEntryPoint, CallType, ExecutionContext},
+    },
     state::cached_state::CachedState,
     transaction::{
-        objects::AccountTransactionContext, transaction_execution::Transaction, transactions::ExecutableTransaction,
-    }, abi::constants::{INITIAL_GAS_COST, N_STEPS_RESOURCE},
+        objects::AccountTransactionContext, transaction_execution::Transaction,
+        transactions::ExecutableTransaction,
+    },
 };
-use juno_state_reader::contract_class_from_json_str;
-use juno_state_reader::felt_to_byte_array;
-use starknet_api::{core::{ChainId, ContractAddress, EntryPointSelector}, hash::StarkHash};
+use cairo_lang_starknet::casm_contract_class::CasmContractClass;
+use cairo_lang_starknet::contract_class::ContractClass as SierraContractClass;
+use cairo_vm::vm::runners::builtin_runner::{
+    BITWISE_BUILTIN_NAME, EC_OP_BUILTIN_NAME, HASH_BUILTIN_NAME, KECCAK_BUILTIN_NAME,
+    OUTPUT_BUILTIN_NAME, POSEIDON_BUILTIN_NAME, RANGE_CHECK_BUILTIN_NAME,
+    SEGMENT_ARENA_BUILTIN_NAME, SIGNATURE_BUILTIN_NAME,
+};
+use juno_state_reader::{contract_class_from_json_str, felt_to_byte_array};
 use starknet_api::transaction::{Calldata, Transaction as StarknetApiTransaction};
 use starknet_api::{
     block::{BlockNumber, BlockTimestamp},
     deprecated_contract_class::EntryPointType,
     hash::StarkFelt,
 };
-use cairo_vm::vm::runners::builtin_runner::{
-    BITWISE_BUILTIN_NAME, EC_OP_BUILTIN_NAME, HASH_BUILTIN_NAME, OUTPUT_BUILTIN_NAME, KECCAK_BUILTIN_NAME,
-    POSEIDON_BUILTIN_NAME, RANGE_CHECK_BUILTIN_NAME, SIGNATURE_BUILTIN_NAME, SEGMENT_ARENA_BUILTIN_NAME
+use starknet_api::{
+    core::{ChainId, ContractAddress, EntryPointSelector},
+    hash::StarkHash,
+    transaction::TransactionVersion,
 };
 
 extern "C" {
@@ -111,25 +122,33 @@ pub extern "C" fn cairoVMExecute(
         return;
     }
 
-    let contract_class = if !class_json.is_null() {
-        let class_json_str = unsafe { CStr::from_ptr(class_json) }.to_str().unwrap();
-        let maybe_cc = contract_class_from_json_str(class_json_str);
-        if maybe_cc.is_err() {
-            report_error(reader_handle, maybe_cc.unwrap_err().to_string().as_str());
-            return;
+    let sn_api_txn = sn_api_txn.unwrap();
+    let contract_class = match sn_api_txn.clone() {
+        StarknetApiTransaction::Declare(declare) => {
+            let class_json_str = unsafe { CStr::from_ptr(class_json) }.to_str().unwrap();
+            let mut maybe_cc = contract_class_from_json_str(class_json_str);
+            if declare.version() == TransactionVersion(2u32.into()) && maybe_cc.is_err() {
+                // class json could be sierra
+                maybe_cc = contact_class_from_sierra_json(class_json_str)
+            };
+
+            if maybe_cc.is_err() {
+                report_error(reader_handle, maybe_cc.unwrap_err().to_string().as_str());
+                return;
+            }
+            Some(maybe_cc.unwrap())
         }
-        Some(maybe_cc.unwrap())
-    } else {
-        None
+        _ => None,
     };
 
-    let txn = Transaction::from_api(sn_api_txn.unwrap(), contract_class, None);
+    let txn = Transaction::from_api(sn_api_txn, contract_class, None);
     if txn.is_err() {
         report_error(reader_handle, txn.unwrap_err().to_string().as_str());
         return;
     }
 
-    let block_context: BlockContext = build_block_context(chain_id_str, block_number, block_timestamp);
+    let block_context: BlockContext =
+        build_block_context(chain_id_str, block_number, block_timestamp);
     let mut state = CachedState::new(reader);
 
     let res = match txn.unwrap() {
@@ -155,7 +174,11 @@ fn report_error(reader_handle: usize, msg: &str) {
     };
 }
 
-fn build_block_context(chain_id_str: &str, block_number: c_ulonglong, block_timestamp: c_ulonglong) -> BlockContext {
+fn build_block_context(
+    chain_id_str: &str,
+    block_number: c_ulonglong,
+    block_timestamp: c_ulonglong,
+) -> BlockContext {
     BlockContext {
         chain_id: ChainId(chain_id_str.into()),
         block_number: BlockNumber(block_number),
@@ -164,21 +187,46 @@ fn build_block_context(chain_id_str: &str, block_number: c_ulonglong, block_time
         sequencer_address: ContractAddress::default(),
         // https://github.com/starknet-io/starknet-addresses/blob/df19b17d2c83f11c30e65e2373e8a0c65446f17c/bridged_tokens/mainnet.json
         // fee_token_address is the same for all networks
-        fee_token_address: ContractAddress::try_from(StarkHash::try_from("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()).unwrap(),
+        fee_token_address: ContractAddress::try_from(
+            StarkHash::try_from(
+                "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+            )
+            .unwrap(),
+        )
+        .unwrap(),
         gas_price: 1, // fixed gas price, so that we can return "consumed gas" to Go side
         vm_resource_fee_cost: HashMap::from([
             (N_STEPS_RESOURCE.to_string(), N_STEPS_FEE_WEIGHT),
             (OUTPUT_BUILTIN_NAME.to_string(), 0.0),
             (HASH_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 32.0),
-            (RANGE_CHECK_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 16.0),
-            (SIGNATURE_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 2048.0),
+            (
+                RANGE_CHECK_BUILTIN_NAME.to_string(),
+                N_STEPS_FEE_WEIGHT * 16.0,
+            ),
+            (
+                SIGNATURE_BUILTIN_NAME.to_string(),
+                N_STEPS_FEE_WEIGHT * 2048.0,
+            ),
             (BITWISE_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 64.0),
             (EC_OP_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 1024.0),
             (POSEIDON_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 32.0),
-            (SEGMENT_ARENA_BUILTIN_NAME.to_string(), N_STEPS_FEE_WEIGHT * 10.0),
+            (
+                SEGMENT_ARENA_BUILTIN_NAME.to_string(),
+                N_STEPS_FEE_WEIGHT * 10.0,
+            ),
             (KECCAK_BUILTIN_NAME.to_string(), 0.0),
         ]),
         invoke_tx_max_n_steps: 1_000_000,
         validate_max_n_steps: 1_000_000,
     }
+}
+
+fn contact_class_from_sierra_json(sierra_json: &str) -> Result<ContractClass, String> {
+    let sierra_class: SierraContractClass =
+        serde_json::from_str(sierra_json).map_err(|err| err.to_string())?;
+    let casm_class = CasmContractClass::from_contract_class(sierra_class, true)
+        .map_err(|err| err.to_string())?;
+    let contract_class_v1 = ContractClassV1::try_from(casm_class).map_err(|err| err.to_string())?;
+
+    Ok(contract_class_v1.into())
 }
