@@ -8,11 +8,11 @@ use std::{
 };
 
 use blockifier::{
-    abi::constants::{INITIAL_GAS_COST, N_STEPS_RESOURCE},
+    abi::constants::{INITIAL_GAS_COST, N_STEPS_RESOURCE, MAX_STEPS_PER_TX},
     block_context::BlockContext,
     execution::{
         contract_class::{ContractClass, ContractClassV1},
-        entry_point::{CallEntryPoint, CallType, ExecutionContext},
+        entry_point::{CallEntryPoint, CallType, ExecutionResources, EntryPointExecutionContext},
     },
     state::cached_state::CachedState,
     transaction::{
@@ -84,11 +84,13 @@ pub extern "C" fn cairoVMCall(
     };
 
     let mut state = CachedState::new(reader);
-    let mut context = ExecutionContext::new(
+    let mut resources = ExecutionResources::default();
+    let mut context = EntryPointExecutionContext::new(
         build_block_context(chain_id_str, block_number, block_timestamp),
         AccountTransactionContext::default(),
+        MAX_STEPS_PER_TX as u32
     );
-    let call_info = entry_point.execute(&mut state, &mut context);
+    let call_info = entry_point.execute(&mut state, &mut resources, &mut context);
 
     match call_info {
         Err(e) => report_error(reader_handle, e.to_string().as_str()),

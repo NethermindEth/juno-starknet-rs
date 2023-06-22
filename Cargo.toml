@@ -8,11 +8,11 @@ edition = "2021"
 [dependencies]
 serde = "1.0.160"
 serde_json = "1.0.96"
-blockifier = {git = "https://github.com/starkware-libs/blockifier", rev = "253021c"}
-starknet_api = { git = "https://github.com/starkware-libs/starknet-api", rev = "7a1d4a8" }
-cairo-vm = "0.5.1"
-cairo-lang-casm = { git = "https://github.com/starkware-libs/cairo", rev = "e71724e4" }
-cairo-lang-starknet = { git = "https://github.com/starkware-libs/cairo", rev = "e71724e4" }
+blockifier = {git = "https://github.com/starkware-libs/blockifier", rev = "b82d20d"}
+starknet_api = { git = "https://github.com/starkware-libs/starknet-api", rev = "a4c78ff" }
+cairo-vm = "0.6"
+cairo-lang-casm = "2.0.0-rc3"
+cairo-lang-starknet = "2.0.0-rc3"
 
 [lib]
 crate-type = ["staticlib"]
